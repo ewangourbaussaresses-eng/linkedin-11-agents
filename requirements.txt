@@ -1,0 +1,3 @@
+# Aucune dépendance n'est nécessaire pour faire tourner les agents
+# (bibliothèque standard uniquement). pytest ne sert qu'aux tests / à la CI.
+pytest>=8.0
