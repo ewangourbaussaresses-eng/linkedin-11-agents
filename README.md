@@ -22,12 +22,12 @@ fonctionne de bout en bout avec des données d'exemple.
 | 1 | **Veille** (`watch`) | Collecte les tendances et sources d'inspiration (RSS, fichiers) et en tire des angles | `watch` |
 | 2 | **Audience** (`audience`) | Analyse votre audience (export CSV) : personas, meilleurs créneaux, langues | `audience` |
 | 3 | **Stratège** (`strategist`) | Construit le calendrier éditorial : piliers, formats, fréquence, trous | `strategist` |
-| 4 | **Rédacteur** (`writer`) | Rédige les posts (hook, corps, CTA, hashtags) dans votre voix | `writer` |
+| 4 | **Rédacteur** (`writer`) | Rédige les posts (hook, corps, CTA, hashtags) dans votre voix — **via Claude si une clé est configurée** | `writer` |
 | 5 | **Éditeur** (`editor`) | Corrige, resserre, vérifie la lisibilité et les règles de style | `editor` |
 | 6 | **Visuel** (`visual`) | Propose un brief visuel/carrousel + texte alternatif accessible | `visual` |
 | 7 | **Programmateur** (`scheduler`) | Place les posts dans les créneaux optimaux et produit le calendrier | `scheduler` |
 | 8 | **Publisher** (`publisher`) | Publie (API officielle ou simulation) et journalise chaque envoi | `publish` |
-| 9 | **Engagement** (`engagement`) | Prépare réponses aux commentaires, suggestions de commentaires à faire | `engagement` |
+| 9 | **Engagement** (`engagement`) | Prépare réponses aux commentaires, suggestions de commentaires à faire — **via Claude si disponible** | `engagement` |
 | 10 | **Superviseur** (`supervisor`) | Contrôle qualité : conformité, doublons, risque, cohérence de marque — bloque si besoin | `supervise` |
 | 11 | **Analyste** (`analyst`) | Mesure les performances, en tire des apprentissages et met à jour la stratégie | `analyze` |
 
@@ -83,6 +83,55 @@ Toutes les commandes acceptent `--help` et `--json` (sortie machine).
 
 ---
 
+## Connecteur Claude (API Anthropic)
+
+Les agents 4 (Rédacteur) et 9 (Engagement) **utilisent Claude quand une clé est
+présente** ; sinon ils retombent automatiquement sur leurs gabarits locaux. Aucune clé
+n'est jamais écrite dans le dépôt.
+
+```bash
+# 1. Récupérez une clé sur https://console.anthropic.com/
+export ANTHROPIC_API_KEY="sk-ant-..."     # Windows PowerShell : $env:ANTHROPIC_API_KEY="sk-ant-..."
+
+# 2. Vérifiez le branchement
+python -m linkedin_agents llm              # fournisseur détecté + modèle
+python -m linkedin_agents llm-test         # appel réel, réponse affichée
+
+# 3. Lancez le pipeline : la rédaction passe par Claude
+python -m linkedin_agents pipeline
+```
+
+Sortie typique :
+
+```
+PIPELINE LINKEDIN — … (simulation) — rédaction : Claude
+ ✔ writer       12 brouillon(s) rédigé(s) — Claude
+```
+
+Variables reconnues :
+
+| Variable | Rôle | Défaut |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | active le connecteur Claude | — |
+| `ANTHROPIC_MODEL` | modèle utilisé | `claude-sonnet-4-5` |
+| `OPENAI_API_KEY` | repli si Claude absent | — |
+| `OPENAI_MODEL` | modèle OpenAI | `gpt-4o-mini` |
+| `LLM_PROVIDER` | `auto` \| `claude` \| `openai` \| `off` | `auto` |
+
+Le fichier [`.env.example`](.env.example) liste toutes les variables. Copiez-le en `.env`
+(ignoré par git) et chargez-le :
+
+```bash
+set -a; . ./.env; set +a          # bash / zsh
+```
+
+**Comportement en cas d'erreur** : si l'appel échoue (clé invalide, quota, réseau), le
+brouillon est produit par le gabarit local et le pipeline continue — il ne casse jamais.
+
+**Dans GitHub Actions** : ajoutez `ANTHROPIC_API_KEY` dans
+*Settings → Secrets and variables → Actions*. Le workflow `pipeline.yml` l'injecte ;
+sans secret, il tourne en gabarits locaux.
+
 ## Utilisation depuis Claude.ai (sans Claude Code)
 
 1. Ouvrez Claude.ai → **Projects** → *New project* → **LinkedIn 11 Agents**.
@@ -122,6 +171,7 @@ Le publisher :
 
 ```bash
 python -m linkedin_agents serve      # http://localhost:8765
+python -m linkedin_agents llm        # état du connecteur Claude
 ```
 
 Tableau de bord : les 11 agents, un bouton « Exécuter » par agent, le pipeline complet en
@@ -130,7 +180,7 @@ un clic, et l'accès au calendrier et aux rapports. Zéro dépendance (serveur s
 ## Tests
 
 ```bash
-python -m pytest -q     # 26 tests, aucun accès réseau
+python -m pytest -q     # 46 tests, aucun accès réseau (LLM simulé)
 ```
 
 ---
@@ -143,6 +193,7 @@ linkedin-11-agents/
 │   ├── __main__.py          # CLI
 │   ├── context.py           # profil de marque, état, chemins
 │   ├── orchestrator.py      # pipeline des 11 agents
+│   ├── llm.py               # connecteur Claude / OpenAI (repli gabarits)
 │   ├── linkedin_api.py      # client API (ou simulation)
 │   ├── web.py               # interface web locale (stdlib)
 │   └── agents/              # 1 module par agent
