@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .. import llm
 from ..context import Context, read_json, slugify
 from .base import AgentResult, agent, keywords
 
@@ -84,6 +85,74 @@ def natural_theme(raw: str) -> str:
     return f"{article}{theme}"
 
 
+WRITER_SYSTEM = (
+    "Tu es rédacteur LinkedIn senior pour une PME française. Tu écris des posts courts, "
+    "concrets, sans jargon creux ni superlatif. Style : phrases courtes, exemples concrets, "
+    "une seule idée par post. Jamais de promesse de résultat. Tu réponds UNIQUEMENT en JSON."
+)
+
+
+def build_post_with_llm(topic: dict, brand: dict) -> dict[str, Any] | None:
+    """Rédige un post via Claude (ou OpenAI). Retourne None si le LLM est indisponible."""
+    theme = topic.get("theme") or topic.get("pillar", "ce sujet")
+    pillar = topic.get("pillar", "Expertise métier")
+    objective = topic.get("objective", "notoriété")
+    forbidden = ", ".join(brand.get("forbidden", [])) or "aucun"
+    hashtags = " ".join(brand.get("hashtags", []))
+
+    prompt = f"""Écris un post LinkedIn en français.
+
+Sujet / angle : {theme}
+Pilier de marque : {pillar}
+Objectif : {objective}
+Audience : {brand.get('audience', 'dirigeants de PME')}
+Voix de marque : {brand.get('voice', 'directe, concrète')}
+Hashtags imposés : {hashtags or "libre"}
+Termes INTERDITS : {forbidden}
+Contrainte : 600 à 1300 caractères, 4 à 7 lignes, une seule idée directrice.
+
+Réponds avec ce JSON exact, sans texte autour :
+{{"title": "titre court du post (max 80 caractères)",
+  "hook": "première ligne accrocheuse",
+  "body": "le post complet prêt à publier, avec hashtags à la fin",
+  "cta": "la question ou l'appel à l'action final",
+  "hashtags": ["#Exemple"]}}"""
+
+    response = llm.complete_or_none(prompt, system=WRITER_SYSTEM,
+                                    max_tokens=900, temperature=0.8)
+    if response is None:
+        return None
+
+    try:
+        data = llm.extract_json(response.text)
+    except llm.LLMError:
+        return None
+    if not isinstance(data, dict) or not str(data.get("body", "")).strip():
+        return None
+
+    body = str(data["body"]).strip()[: int(brand.get("limits", {}).get("max_chars", 1300))]
+    tags = [t for t in (data.get("hashtags") or []) if isinstance(t, str) and t.startswith("#")]
+    if not tags:
+        tags = [t for t in brand.get("hashtags", [])][:3]
+        body += "\n\n" + " ".join(tags)
+
+    return {
+        "title": str(data.get("title") or theme)[:90],
+        "pillar": pillar,
+        "format": topic.get("format", "text"),
+        "objective": objective,
+        "hook": str(data.get("hook") or body.splitlines()[0]),
+        "body": body,
+        "cta": str(data.get("cta") or ""),
+        "hashtags": tags[:5],
+        "chars": len(body),
+        "topic_id": topic.get("id", ""),
+        "date": topic.get("date", ""),
+        "slot": topic.get("slot", ""),
+        "generated_by": f"llm:{response.provider}/{response.model}",
+    }
+
+
 def build_post(topic: dict, brand: dict) -> dict[str, Any]:
     theme = natural_theme(topic.get("theme") or topic.get("pillar", "ce sujet"))
     pillar = topic.get("pillar", "Expertise métier")
@@ -114,6 +183,7 @@ def build_post(topic: dict, brand: dict) -> dict[str, Any]:
         "topic_id": topic.get("id", ""),
         "date": topic.get("date", ""),
         "slot": topic.get("slot", ""),
+        "generated_by": "template",
     }
 
 
@@ -157,19 +227,28 @@ def run(ctx: Context, payload: dict[str, Any] | None = None) -> AgentResult:
         limit = int(payload.get("limit", len(topics)))
         topics = topics[:limit]
 
+    use_llm = payload.get("use_llm", True) and llm.is_available()
     created = []
     for topic in topics:
-        post = build_post(topic, brand)
+        post = (build_post_with_llm(topic, brand) if use_llm else None) or build_post(topic, brand)
         name = f"{post['topic_id'] or slugify(post['title'])}.md"
         path = ctx.drafts_dir / name
         path.write_text(render_markdown(post), encoding="utf-8")
         created.append({"file": str(path), **post})
 
-    ctx.log("writer", "drafts", {"count": len(created)})
+    ctx.log("writer", "drafts", {"count": len(created), "llm": use_llm})
+    generated = sum(1 for c in created if c.get("generated_by", "").startswith("llm:"))
+    if generated:
+        provider = llm.active_provider()
+        engine = "Claude" if provider == "claude" else provider
+        if generated < len(created):
+            engine += f" ({len(created) - generated} en gabarits)"
+    else:
+        engine = "gabarits locaux"
     return AgentResult(
         agent="writer",
         ok=bool(created),
-        summary=f"{len(created)} brouillon(s) rédigé(s)",
+        summary=f"{len(created)} brouillon(s) rédigé(s) — {engine}",
         data={"drafts": created},
         outputs=[c["file"] for c in created],
     )
