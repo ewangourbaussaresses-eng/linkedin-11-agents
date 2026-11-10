@@ -14,6 +14,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from . import llm
 from .context import Context, read_json
 from .orchestrator import agents_list, format_report, run_agent, run_pipeline
 
@@ -61,6 +62,9 @@ def dashboard(ctx: Context) -> bytes:
         f"<td>{html.escape(h['action'])}</td></tr>" for h in history) or "<tr><td colspan=3>—</td></tr>"
     body = f"""
 <p class="sub">Mode : {'<span class="warn">simulation</span>' if ctx.dry_run else '<span class="ok">réel</span>'}
+ · rédaction : <span class="{'ok' if llm.is_available() else 'warn'}">{html.escape(
+    {'claude': 'Claude connecté', 'openai': 'OpenAI connecté'}.get(
+        llm.active_provider(), 'gabarits locaux (aucune clé)'))}</span>
  · espace de travail : {html.escape(str(ctx.workspace))}</p>
 <p><a class="btn" href="/pipeline">▶ Lancer le pipeline complet (simulation)</a>
  <a class="btn ghost" href="/file?path=workspace/calendar.md">📅 Calendrier</a>
