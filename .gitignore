@@ -3,6 +3,11 @@ __pycache__/
 .venv/
 venv/
 
+# Secrets locaux
+.env
+.env.*
+!.env.example
+
 # Espace de travail généré
 workspace/
 !workspace/.gitkeep
