@@ -1,0 +1,15 @@
+role,seniority,industry,hour,format,likes,comments
+Dirigeant,CEO,Industrie,08,text,34,6
+Dirigeant,CEO,Industrie,12,carrousel,58,11
+Directrice marketing,Directeur,Services,08,text,22,3
+Directrice marketing,Directeur,Services,18,carrousel,61,14
+Consultant,Indépendant,Conseil,12,text,41,7
+Consultant,Indépendant,Conseil,18,image,29,4
+Responsable RH,Manager,Services,08,text,18,2
+Responsable RH,Manager,Services,12,carrousel,37,9
+DSI,Directeur,Technologie,18,text,44,8
+DSI,Directeur,Technologie,08,carrousel,52,10
+Fondatrice,CEO,Commerce,12,image,48,12
+Fondatrice,CEO,Commerce,18,text,33,5
+Chef de projet,Manager,Industrie,08,carrousel,27,4
+Chef de projet,Manager,Industrie,12,text,31,6
