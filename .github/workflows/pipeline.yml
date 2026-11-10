@@ -22,8 +22,19 @@ jobs:
           python-version: "3.12"
       - name: Initialiser l'espace de travail
         run: python -m linkedin_agents init
+      - name: Vérifier le connecteur Claude
+        run: python -m linkedin_agents llm
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+
       - name: Lancer les 11 agents (simulation)
         run: python -m linkedin_agents pipeline --dry-run --json > run.json
+        env:
+          # Si le secret n'est pas défini, les agents retombent sur leurs gabarits.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       - name: Publier les sorties en artefact
         uses: actions/upload-artifact@v4
         with:
