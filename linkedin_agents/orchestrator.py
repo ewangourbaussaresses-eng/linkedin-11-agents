@@ -7,6 +7,7 @@ from typing import Any, Callable
 from .agents import registry
 from .agents import analyst, audience, editor, engagement, publisher  # noqa: F401
 from .agents import scheduler, strategist, supervisor, visual, watch, writer  # noqa: F401
+from . import llm
 from .context import Context, now_utc, write_json
 from .agents.base import AgentResult
 
@@ -79,6 +80,7 @@ def run_pipeline(ctx: Context, steps: list[str] | None = None,
     report = {
         "run_at": now_utc().isoformat(timespec="seconds"),
         "dry_run": dry_run,
+        "llm": llm.status(),
         "steps": [r.as_dict() for r in results],
     }
     write_json(ctx.workspace / "reports" / f"run_{now_utc():%Y%m%d_%H%M%S}.json", report)
@@ -87,9 +89,12 @@ def run_pipeline(ctx: Context, steps: list[str] | None = None,
 
 
 def format_report(report: dict[str, Any]) -> str:
+    engine = (report.get("llm") or {}).get("provider", "off")
+    engine_label = {"claude": "Claude", "openai": "OpenAI"}.get(engine, "gabarits locaux")
     lines = ["", "═" * 62,
              f"  PIPELINE LINKEDIN — {report['run_at']}"
-             f" {'(simulation)' if report['dry_run'] else '(réel)'}",
+             f" {'(simulation)' if report['dry_run'] else '(réel)'}"
+             f" — rédaction : {engine_label}",
              "═" * 62]
     for step in report["steps"]:
         mark = "✔" if step["ok"] else "✖"
