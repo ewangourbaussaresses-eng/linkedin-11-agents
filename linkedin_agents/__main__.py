@@ -6,6 +6,7 @@ import json
 import sys
 from pathlib import Path
 
+from . import llm
 from .context import DEFAULT_BRAND, DEFAULT_STRATEGY, Context, write_json
 from .orchestrator import agents_list, format_report, run_agent, run_pipeline
 
@@ -26,6 +27,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("list", help="Lister les 11 agents")
+    sub.add_parser("llm", help="État du connecteur Claude / OpenAI")
+
+    test = sub.add_parser("llm-test", help="Tester le connecteur LLM avec un appel réel")
+    test.add_argument("--prompt", default="Écris une phrase d'accroche LinkedIn sur l'IA en PME.")
     sub.add_parser("init", help="Créer workspace/ avec un profil de marque par défaut")
 
     for name, label in [
@@ -94,6 +99,35 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "init":
         return command_init(ctx)
+
+    if args.command == "llm":
+        info = llm.status()
+        if args.json:
+            print(json.dumps(info, ensure_ascii=False, indent=2))
+        else:
+            state = "connecté" if info["available"] else "non configuré"
+            print(f"Fournisseur : {info['provider']} ({state})")
+            print(f"Clé Claude   : {'présente' if info['anthropic_key'] else 'absente (ANTHROPIC_API_KEY)'}")
+            print(f"Clé OpenAI   : {'présente' if info['openai_key'] else 'absente (OPENAI_API_KEY)'}")
+            if info["model"]:
+                print(f"Modèle       : {info['model']}")
+            if not info["available"]:
+                print("→ Sans clé, les agents utilisent leurs gabarits locaux (mode hors ligne).")
+        return 0
+
+    if args.command == "llm-test":
+        if not llm.is_available():
+            print("✖ Aucun fournisseur configuré : définissez ANTHROPIC_API_KEY.")
+            return 2
+        try:
+            response = llm.complete(args.prompt, max_tokens=200, temperature=0.5)
+        except llm.LLMError as exc:
+            print(f"✖ Échec : {exc}")
+            return 1
+        print(f"✔ {response.provider}/{response.model} "
+              f"({response.input_tokens} tokens in, {response.output_tokens} out)")
+        print(response.text)
+        return 0
 
     if args.command == "serve":
         from .web import serve
