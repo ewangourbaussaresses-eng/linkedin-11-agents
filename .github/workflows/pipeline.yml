@@ -1,0 +1,44 @@
+name: Pipeline LinkedIn (simulation)
+
+# Lance les 11 agents chaque lundi et publie le résultat en artefact.
+# Pour publier réellement, ajoutez les secrets LINKEDIN_ACCESS_TOKEN et
+# LINKEDIN_AUTHOR_URN puis retirez `--dry-run` de la commande.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Initialiser l'espace de travail
+        run: python -m linkedin_agents init
+      - name: Lancer les 11 agents (simulation)
+        run: python -m linkedin_agents pipeline --dry-run --json > run.json
+      - name: Publier les sorties en artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linkedin-run-${{ github.run_number }}
+          path: |
+            run.json
+            workspace/calendar.md
+            workspace/drafts/
+            workspace/reports/
+      - name: Archiver le calendrier dans le dépôt
+        run: |
+          mkdir -p digest
+          cp workspace/calendar.md digest/calendrier-$(date +%F).md
+          git config user.name "linkedin-bot"
+          git config user.email "linkedin-bot@users.noreply.github.com"
+          git add digest
+          git diff --cached --quiet || git commit -m "chore: calendrier éditorial $(date +%F)"
+          git push
