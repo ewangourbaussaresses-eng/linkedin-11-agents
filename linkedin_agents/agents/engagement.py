@@ -6,8 +6,10 @@ Sortie : réponses suggérées (ton de la marque), priorisation, et 3 commentair
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from .. import llm
 from ..context import Context, read_json, write_json
 from .base import AgentResult, agent
 
@@ -50,6 +52,57 @@ def suggest_reply(comment: dict, brand: dict) -> dict[str, Any]:
     }
 
 
+ENGAGEMENT_SYSTEM = (
+    "Tu es responsable community management d'une PME française. Tu réponds aux "
+    "commentaires LinkedIn avec tact : court, utile, jamais commercial à outrance, "
+    "jamais agressif envers une objection. Tu réponds UNIQUEMENT en JSON."
+)
+
+
+def suggest_replies_with_llm(comments: list[dict], brand: dict) -> list[dict] | None:
+    """Réponses personnalisées via Claude. None si le LLM est indisponible."""
+    if not comments:
+        return None
+    payload = [{"author": c.get("author", ""), "text": c.get("text", ""),
+                "theme": c.get("theme", "")} for c in comments[:10]]
+    prompt = f"""Voici des commentaires reçus sur des posts LinkedIn.
+Voix de marque : {brand.get('voice', 'directe, concrète')}
+Termes interdits : {', '.join(brand.get('forbidden', [])) or 'aucun'}
+
+Commentaires :
+{json.dumps(payload, ensure_ascii=False, indent=2)}
+
+Pour CHACUN, écris une réponse de 1 à 3 phrases, prête à publier.
+Réponds uniquement avec ce JSON :
+[{{"author": "...", "type": "question|objection|félicitation|réaction", "reply": "..."}}]"""
+
+    response = llm.complete_or_none(prompt, system=ENGAGEMENT_SYSTEM,
+                                    max_tokens=900, temperature=0.7)
+    if response is None:
+        return None
+    try:
+        data = llm.extract_json(response.text)
+    except llm.LLMError:
+        return None
+    if not isinstance(data, list):
+        return None
+
+    priority = {"question": 3, "objection": 2, "réaction": 1, "félicitation": 0}
+    results = []
+    for item in data:
+        if not isinstance(item, dict) or not item.get("reply"):
+            continue
+        kind = item.get("type") if item.get("type") in priority else classify(str(item["reply"]))
+        results.append({
+            "author": str(item.get("author", "")),
+            "type": kind,
+            "priority": priority[kind],
+            "reply": str(item["reply"]).strip(),
+            "generated_by": f"llm:{response.provider}",
+        })
+    return results or None
+
+
 def build_outreach(brand: dict) -> list[dict[str, str]]:
     pillars = brand.get("pillars", ["Expertise métier"])
     return [
@@ -69,8 +122,12 @@ def run(ctx: Context, payload: dict[str, Any] | None = None) -> AgentResult:
     if comments is None:
         comments = read_json(ctx.data_dir / "comments.json", default=[]) or []
 
-    replies = sorted((suggest_reply(c, ctx.brand) for c in comments),
-                     key=lambda r: -r["priority"])
+    replies = None
+    if payload.get("use_llm", True) and llm.is_available():
+        replies = suggest_replies_with_llm(comments, ctx.brand)
+    if replies is None:
+        replies = [suggest_reply(c, ctx.brand) for c in comments]
+    replies = sorted(replies, key=lambda r: -r["priority"])
     result = {
         "comments": len(comments),
         "replies": replies,
